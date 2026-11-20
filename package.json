@@ -1,0 +1,22 @@
+{
+  "name": "herdr-source-control",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VS Code-style Source Control panel mod for Herdr Desktop (Staged Changes, Changes, stage/unstage/discard, hunk diff, commit, repo switcher)",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.22.1 <25"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check:native": "herdr-app check mod",
+    "check:native:scenes": "node scripts/check-native-scenes.mjs",
+    "rewire": "node scripts/rewire-changes-layout.mjs",
+    "install:mod": "node scripts/install.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ttaatoo/herdr-source-control.git"
+  }
+}
