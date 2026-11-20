@@ -22,7 +22,7 @@ export function renderPanel(view, pal) {
         .child(renderLists(view, pal).flex_1().min_h(0))
         .when(s.view === "diff" || s.view === "file", (el) =>
           el.child(div().h(1).bg(pal.border).flex_none())
-            .child(renderDetail(view, pal).flex_1().min_h(0).min_h(180)));
+            .child(renderDetail(view, pal).flex_1().min_w(0).min_h(180)));
 
   return v_flex().id("root").size_full().bg(pal.background).text_color(pal.foreground)
     .on_size_change((size, cx) => view.resize(size, cx))
@@ -205,18 +205,19 @@ function renderDetail(view, pal) {
       .child(div().text_size(12).text_color(pal.dim).child("Select a file to see its diff"));
   }
   const stats = diff.stats || { added: 0, removed: 0 };
-  const section = diff.section;
+  const rows = diff.rows || [];
+  const diffWidth = Math.max(300, ...rows.map((row) => ((row.text || "").length + 1) * 7 + 80));
   return v_flex().id("scm-diff").size_full().min_h(0)
     .child(detailBar(view, pal, diff.file?.path || "Diff", [
       { id: "open-file", label: "Open File", run: (cx) => view.openPreview(cx) },
     ], `+${stats.added} −${stats.removed}`))
     .when((diff.file?.hunks || []).length > 0 && !diff.file?.binary, (el) => el.child(hunkStrip(view, pal, diff)))
-    .child(div().id("scm-diff-x").flex_1().min_h(0).size_full().overflow_x_scrollbar()
-      .child(div().w_full().min_w(300).h_full()
-        .child(v_virtual_list("scm-diff-rows", (diff.rows || []).length, 22, (i) => String(i),
-          (range) => (diff.rows || []).slice(range.start, range.end).map((row, j) =>
-            diffRow(view, pal, row, section, range.start + j))).size_full())))
-    .child(Scrollbar.vertical("scm-diff-rows").viewport_from_layout().absolute().inset_0());
+    .child(div().id("scm-diff-body").flex_1().min_h(0).w_full().relative()
+      .child(div().id("scm-diff-x").size_full().overflow_x_scrollbar()
+        .child(div().w_full().min_w(diffWidth).h_full()
+          .child(v_virtual_list("scm-diff-rows", rows.length, 20, (i) => String(i),
+            (range) => rows.slice(range.start, range.end).map((row) => diffRow(pal, row))).size_full())))
+      .child(Scrollbar.vertical("scm-diff-rows").viewport_from_layout().absolute().inset_0()));
 }
 
 
@@ -247,31 +248,36 @@ function detailBar(view, pal, title, actions, stats) {
         .hover((st) => st.bg(pal.hover)).on_click((_e, cx) => action.run(cx)).child(action.label)));
 }
 
-function diffRow(view, pal, row, section, index) {
+/** Pure presentational row for v_virtual_list. Never register on_click/on_hover here:
+ *  Herdr rebuilds virtual rows every frame and rejects interactive handlers in the item renderer. */
+function diffRow(pal, row) {
   if (row.kind === "@") {
-    const actions = section === "staged"
-      ? [{ id: "unstage-hunk", label: "Unstage Hunk", run: (cx) => view.unstageHunk(row.hunkIndex, cx) }]
-      : [
-          { id: "stage-hunk", label: "Stage Hunk", run: (cx) => view.stageHunk(row.hunkIndex, cx) },
-          { id: "revert-hunk", label: "Revert Hunk", run: (cx) => view.askRevertHunk(row.hunkIndex, cx) },
-        ];
-    return h_flex().id(`hunk-${row.hunkIndex}`).h(22).px(8).gap(8).items_center().bg(pal.raised)
-      .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(pal.hunk).child(row.text))
-      .children(actions.map((action) =>
-        div().id(`${action.id}-${row.hunkIndex}`).px(6).h(18).rounded(4).text_size(10).text_color(pal.accent)
-          .cursor_pointer().hover((st) => st.bg(pal.hover)).on_click((_e, cx) => action.run(cx)).child(action.label)));
+    return div().w_full().h(20).flex_none().px(12).truncate().bg(pal.raised).text_size(11).text_color(pal.hunk).child(row.text);
   }
   if (row.kind === "notice") {
-    return div().id(`notice-${index}`).p(10).text_size(12).text_color(pal.dim).child(row.text);
+    return div().w_full().px(12).py(8).text_size(12).text_color(pal.dim).child(row.text);
   }
-  const bg = row.kind === "+" ? "#1a7f3722" : row.kind === "-" ? "#c93c2c22" : pal.background;
+  if (row.kind === "\\") {
+    return div().w_full().h(20).flex_none().px(12).truncate().text_size(11).text_color(pal.dim).child(row.text);
+  }
+  const added = withAlpha(pal.added, "22");
+  const removed = withAlpha(pal.removed, "22");
+  const bg = row.kind === "+" ? added : row.kind === "-" ? removed : pal.background;
   const fg = row.kind === "+" ? pal.added : row.kind === "-" ? pal.removed : pal.foreground;
   const mark = row.kind === "+" || row.kind === "-" ? row.kind : " ";
-  const num = row.number == null ? "" : String(row.number);
-  return h_flex().id(`diff-${index}`).h(22).px(4).gap(8).items_center().bg(bg)
-    .child(div().w(36).flex_none().text_size(10).text_color(pal.dim).child(num))
+  const oldNo = row.kind === "+" ? "" : (row.oldNumber == null ? "" : String(row.oldNumber));
+  const newNo = row.kind === "-" ? "" : (row.newNumber == null && row.number == null ? "" : String(row.newNumber ?? row.number));
+  return h_flex().w_full().h(20).flex_none().px(4).gap(8).items_center().bg(bg)
+    .child(div().w(36).flex_none().text_right().text_size(10).text_color(pal.dim).child(oldNo))
+    .child(div().w(36).flex_none().text_right().text_size(10).text_color(pal.dim).child(newNo))
     .child(div().w(10).flex_none().text_size(12).text_color(fg).child(mark))
     .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(fg).child(row.text));
+}
+
+function withAlpha(hex, alpha) {
+  const raw = String(hex || "").replace("#", "");
+  if (raw.length === 6 && /^[0-9a-fA-F]+$/.test(raw)) return `#${raw}${alpha}`;
+  return hex;
 }
 
 function renderSwitcher(view, pal) {
